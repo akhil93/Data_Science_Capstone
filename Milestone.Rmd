@@ -1,0 +1,148 @@
+---
+title: "Data Science Capstone Project Milestone Report"
+author: "Akhil kumar"
+date: "Tuesday, March 24, 2015"
+output: pdf_document
+---
+
+## Task 0: Understanding the Problem
+
+
+The reason for this report is to investigate the corpus data provided by the Coursera Data Science Capstone Course and use it to create a text predicting model. The model should predict the most probable word by using an input string.
+
+Below are few things to be noted from the given corpus data. * The data contains a lot unnecessary noise and other foreign words and words from different encodings. * Most of the words repeat only few times, so associating each words with other is important to predict the next word. * We select only english language words by using a regular expression.
+
+##Task 1: Data Acquisition & Cleaning.
+
+Make sure the path for working directory is set to location where your files are stored. The data provided by Coursera in partnership with Swiftkey contains data for different languages like Russian, German, Finnish & english. We are intrested in english so lets load the files inside the “en_US” folder.
+
+###Import Datasets.
+```{r, cache=TRUE, message=FALSE,warning=FALSE,error=FALSE}
+news <- readLines("C:/DS Capstone/final/en_US/en_US.news.txt", encoding = "UTF-8")
+twitter <- readLines("C:/DS Capstone/final/en_US/en_US.twitter.txt", encoding = "UTF-8")
+blogs <- readLines("C:/DS Capstone/final/en_US/en_US.blogs.txt", encoding = "UTF-8")
+```
+
+Here's the basic inforamtion about the three files.
+```{r, echo = FALSE, cache=TRUE}
+library(stringi)
+library(stringr)
+number.lines=cbind(stri_stats_general(news)["Lines"],stri_stats_general(twitter)["Lines"],stri_stats_general(blogs)["Lines"])
+number.words=c(sum(stri_count_words(news)),sum(stri_count_words(twitter)),sum(stri_count_words(blogs)))
+summary_table=rbind(number.lines,number.words)
+rownames(summary_table)=c("Number of Lines","Number of words")
+colnames(summary_table)=c("Blogs","Twitter","News")
+```
+```{r echo=FALSE}
+summary_table
+```
+###Sampling
+These files are huge, so lets subset the data and select a portion of data using sampling so that our subset is a representative sample. For simplicity, I'm conisdering only 10% of the data from each file.
+```{r echo =TRUE, cache=TRUE}
+set.seed(48)
+news.sample <- sample(news, length(news)*0.10, replace = FALSE)
+twitter.sample <- sample(twitter, length(twitter)*0.10, replace = FALSE)
+blogs.sample <- sample(blogs, length(blogs)*0.10, replace = FALSE)
+```
+
+Here's the brief summary of the sample we just made from the main data.
+```{r echo=FALSE, cache=TRUE}
+number.lines=cbind(stri_stats_general(news.sample)["Lines"],stri_stats_general(twitter.sample)["Lines"],stri_stats_general(blogs.sample)["Lines"])
+number.words=c(sum(stri_count_words(news.sample)),sum(stri_count_words(twitter.sample)),sum(stri_count_words(blogs.sample)))
+summary_table=rbind(number.lines,number.words)
+rownames(summary_table)=c("Number of Lines","Number of words")
+colnames(summary_table)=c("News","Twitter","Blogs")
+```
+```{r, echo=FALSE}
+summary_table
+```
+ Lets plot the histogram of number of words in each lines for the 3 sampled data.
+ 
+```{r echo=FALSE, cache=TRUE}
+library(stringi)
+
+w.blogs <- stri_count_words(blogs.sample)
+w.news <- stri_count_words(news.sample)
+w.twitter <- stri_count_words(twitter.sample)
+par(mfrow=c(1,3))
+hist(w.twitter[w.twitter<= 50],col="orange",xlab="Twitter",
+     ylab="Frequency",main="Number of words in each line in Twitter")
+hist(w.news[w.news<= 50],col="orange",xlab="News",
+     ylab="Frequency",main="Number of words in each line in News")
+hist(w.blogs[w.blogs<= 150],col="orange",xlab="Blogs",
+     ylab="Frequency",main="Number of words in each line in Blogs")
+```
+
+###Data Cleaning.
+
+Lets combine all the 3 data files into a single file. First we need to remove the numbers, then any special characters, then we remove all the extra white space and replace them with a single space.
+```{r echo =TRUE,cache=TRUE,error=FALSE,warning=FALSE}
+library(tm)
+library(SnowballC)
+new.data <- c(news.sample,twitter.sample,blogs.sample)
+corpus <- Corpus(VectorSource(new.data))
+remove.decimals <- function(x) {gsub("([0-9]*)\\.([0-9]+)", "\\1 \\2", x)}
+remove.hashtags <- function(x) { gsub("#[a-zA-z0-9]+", " ", x)}
+remove.noneng <- function(x) {gsub("\\W+", " ",x)}
+corpus <- tm_map(corpus, remove.decimals)
+corpus <- tm_map(corpus, removeNumbers)
+corpus <- tm_map(corpus, remove.noneng)
+corpus <- tm_map(corpus, remove.hashtags)
+corpus <- tm_map(corpus, stripWhitespace)
+corpus <- tm_map(corpus, removePunctuation)
+corpus <- tm_map(corpus, tolower)
+corpus <- tm_map(corpus, removeWords, stopwords("english"))
+```
+
+There a lot of words which are rude and bad which are called profanity words. We need to find such words and stop predicting them. I found a dataset which has almost 723 such words. We will use those words as stopwords.
+```{r echo =TRUE,cache=TRUE}
+profanity <- read.csv("C:/DS Capstone/final/en_US/Terms-to-block.csv", header = F)
+profanity <- rep(profanity$V1)
+corpus <- tm_map(corpus, removeWords, profanity)
+
+```
+
+##Task 2: Exploratory Analysis.
+
+###Tokenization
+
+Lets create One-Gram Tokenization.
+
+```{r echo=TRUE,cache=TRUE, eval=FALSE}
+
+
+options( java.parameters = "-Xmx4g" )
+library(rJava)
+library(RWeka)
+options(mc.cores = 1)
+one.g_Tokenizer <- NGramTokenizer(corpus, Weka_control(min = 1, max = 1))
+one.g <- data.frame(table(one.g_Tokenizer))
+one.g.sorted <- one.g[order(one.g$Freq,decreasing = TRUE),]
+```
+Here are the top 20 one grams.
+```{r, echo=TRUE}
+one.g.sorted[1:20,]
+```
+Lets create Two-Gram Tokenization.
+```{r echo=TRUE,message=FALSE,cache=TRUE,eval=FALSE}
+two.g_Tokenizer <- NGramTokenizer(new.data, Weka_control(min = 2, max = 2))
+two.g <- data.frame(table(two.g_Tokenizer))
+two.g.sorted <- two.g[order(two.g$Freq,decreasing = TRUE),]
+```
+Here are the top 20 Two-grams
+```{r warning=FALSE}
+two.g.sorted[1:20,]
+par(mfrow = c(1,2))
+library(wordcloud)
+wordcloud(one.g.sorted[,1],freq=one.g.sorted[,2],scale=c(5,1),random.order=F,rot.per=0.5,min.freq=100,colors=brewer.pal(8,"Dark2"))
+wordcloud(two.g.sorted[,1],freq=one.g.sorted[,2],scale=c(5,1),random.order=F,rot.per=0.5,min.freq=100,colors=brewer.pal(8,"Dark2"))
+```
+
+
+
+
+###Further Development
+
+- As we can see from the three gram function. Most of the following words are some apostrophe words. So I would like to replace all apostrophe words into continuing words. Like I don't to I do not. 
+- Build a predictive Model.
+- Build a Shiny Model.
